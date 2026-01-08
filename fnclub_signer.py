@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 # 配置信息
 class Config:
-    # 账号信息
-    USERNAME = 'your_username'  # 修改为你的用户名
-    PASSWORD = 'your_password'  # 修改为你的密码
+    # 账号信息（优先从环境变量读取）
+    USERNAME = os.environ.get('USERNAME', 'your_username')  # 修改为你的用户名
+    PASSWORD = os.environ.get('PASSWORD', 'your_password')  # 修改为你的密码
     
     # 网站URL
     BASE_URL = 'https://club.fnnas.com/'
@@ -42,10 +42,10 @@ class Config:
     # Cookie文件路径
     COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.json')
     
-    # 验证码识别API (百度OCR API)
+    # 验证码识别API (百度OCR API)（优先从环境变量读取）
     CAPTCHA_API_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
-    API_KEY = "your_api_key"  # 替换为你的百度OCR API Key
-    SECRET_KEY = "your_secret_key"  # 替换为你的百度OCR Secret Key
+    API_KEY = os.environ.get('API_KEY', "your_api_key")  # 替换为你的百度OCR API Key
+    SECRET_KEY = os.environ.get('SECRET_KEY', "your_secret_key")  # 替换为你的百度OCR Secret Key
     
     # 重试设置
     MAX_RETRIES = 3  # 最大重试次数
@@ -53,6 +53,15 @@ class Config:
     
     # Token缓存文件
     TOKEN_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_cache.json')
+    
+    # IYUU 通知配置 - 访问：https://iyuu.cn/ 微信扫描后获取Token
+    IYUU_TOKEN = os.environ.get('IYUU_TOKEN', 'IYUU--------------------------------------------71')
+    
+    @staticmethod
+    def get_iyuu_url():
+        """获取 IYUU 通知 API URL"""
+        token = os.environ.get('IYUU_TOKEN', Config.IYUU_TOKEN)
+        return f'https://iyuu.cn/{token}.send'
 
 class FNSignIn:
     def __init__(self):
@@ -565,6 +574,40 @@ class FNSignIn:
         logger.error(f"获取签到信息失败，已达到最大重试次数({Config.MAX_RETRIES})")
         return {}
     
+    def send_notification(self, title, content):
+        """发送 IYUU 通知"""
+        try:
+            token = os.environ.get('IYUU_TOKEN', Config.IYUU_TOKEN)
+            if not token or token == 'your_iyuu_token':
+                logger.warning("IYUU Token 未配置，跳过通知发送")
+                return False
+            
+            url = Config.get_iyuu_url()
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            }
+            data = {
+                'text': title,
+                'desp': content
+            }
+            
+            response = requests.post(url, headers=headers, data=data, timeout=10)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('errcode') == 0:
+                    logger.info("通知发送成功")
+                    return True
+                else:
+                    logger.error(f"通知发送失败: {result.get('errmsg', '未知错误')}")
+                    return False
+            else:
+                logger.error(f"通知发送失败，状态码: {response.status_code}")
+                return False
+        except Exception as e:
+            logger.error(f"发送通知时发生错误: {e}")
+            return False
+    
     def run(self):
         """运行签到流程，带重试机制"""
         logger.info("===== 开始运行签到脚本 =====")
@@ -574,12 +617,14 @@ class FNSignIn:
             # 如果未登录，尝试登录
             if not self.login():
                 logger.error("登录失败，签到流程终止")
+                self.send_notification("FN论坛签到失败", "登录失败，请检查账号密码或网络连接")
                 return False
         
         # 检查签到状态
         sign_text, sign_param = self.check_sign_status()
         if sign_text is None or sign_param is None:
             logger.error("获取签到状态失败，签到流程终止")
+            self.send_notification("FN论坛签到失败", "获取签到状态失败，请检查网络连接")
             return False
         
         logger.info(f"当前签到状态: {sign_text}")
@@ -590,25 +635,39 @@ class FNSignIn:
             if self.do_sign(sign_param):
                 # 获取并记录签到信息
                 sign_info = self.get_sign_info()
+                info_text = ""
                 if sign_info:
                     logger.info("===== 签到信息 =====")
                     for key, value in sign_info.items():
                         logger.info(f"{key}: {value}")
+                        info_text += f"{key}: {value}\n"
+                
+                # 发送成功通知
+                notification_content = f"签到成功！\n\n签到信息：\n{info_text.strip() if info_text else '暂无详细信息'}"
+                self.send_notification("FN论坛签到成功", notification_content)
                 return True
             else:
                 logger.error("签到失败")
+                self.send_notification("FN论坛签到失败", "签到操作失败，请检查网络连接或稍后重试")
                 return False
         elif sign_text == "今日已打卡":
             logger.info("今日已签到，无需重复签到")
             # 获取并记录签到信息
             sign_info = self.get_sign_info()
+            info_text = ""
             if sign_info:
                 logger.info("===== 签到信息 =====")
                 for key, value in sign_info.items():
                     logger.info(f"{key}: {value}")
+                    info_text += f"{key}: {value}\n"
+            
+            # 发送已签到通知
+            notification_content = f"今日已签到，无需重复签到。\n\n签到信息：\n{info_text.strip() if info_text else '暂无详细信息'}"
+            self.send_notification("FN论坛签到提醒", notification_content)
             return True
         else:
             logger.warning(f"未知的签到状态: {sign_text}，签到流程终止")
+            self.send_notification("FN论坛签到异常", f"遇到未知的签到状态: {sign_text}，请手动检查")
             return False
 
 

@@ -15,6 +15,8 @@
 - 验证码自动识别功能，使用百度OCR API识别验证码
 - 详细的日志记录
 - 完善的错误处理和重试机制
+- **GitHub Actions 自动运行支持**
+- **IYUU 通知功能，签到成功/失败时自动发送通知**
 
 ## 依赖安装
 
@@ -32,7 +34,29 @@ pip install requests beautifulsoup4
 4. 运行脚本
 
 ```bash
-python auto_sign.py
+python fnclub_signer.py
+```
+
+### 使用环境变量配置（推荐）
+
+可以通过环境变量设置配置信息，无需修改代码：
+
+```bash
+# Windows
+set USERNAME=your_username
+set PASSWORD=your_password
+set API_KEY=your_api_key
+set SECRET_KEY=your_secret_key
+set IYUU_TOKEN=your_iyuu_token
+python fnclub_signer.py
+
+# Linux/Mac
+export USERNAME=your_username
+export PASSWORD=your_password
+export API_KEY=your_api_key
+export SECRET_KEY=your_secret_key
+export IYUU_TOKEN=your_iyuu_token
+python fnclub_signer.py
 ```
 
 ## 配置说明
@@ -70,7 +94,26 @@ class Config:
 
 1. 访问[百度AI开放平台](https://ai.baidu.com/)注册账号
 2. 创建文字识别应用，获取API Key和Secret Key
-3. 将获取到的API Key和Secret Key填入Config类中的对应位置
+3. 将获取到的API Key和Secret Key填入Config类中的对应位置，或通过环境变量 `API_KEY` 和 `SECRET_KEY` 设置
+
+### IYUU 通知配置
+
+1. 访问 [IYUU](https://iyuu.cn/) 获取通知令牌
+2. 在 Config 类中设置 `IYUU_TOKEN`，或通过环境变量 `IYUU_TOKEN` 设置
+3. 脚本会在以下情况发送通知：
+   - 签到成功时
+   - 今日已签到（提醒）
+   - 登录失败时
+   - 签到失败时
+   - 其他异常情况
+
+通知接口说明：
+- 接口URL: `https://iyuu.cn/{您的IYUU令牌}.send`
+- 请求方式: POST
+- Content-Type: `application/x-www-form-urlencoded; charset=UTF-8`
+- 请求参数:
+  - `text`: 通知标题（必填）
+  - `desp`: 通知内容（必填）
 
 ## 日志说明
 
@@ -89,6 +132,21 @@ DEBUG=1 python auto_sign.py
 
 ## 自动化部署
 
+### 方式一：GitHub Actions（推荐）
+
+1. Fork 本仓库到你的 GitHub 账号
+2. 在仓库设置中添加以下 Secrets：
+   - `USERNAME`: FN论坛用户名
+   - `PASSWORD`: FN论坛密码
+   - `API_KEY`: 百度OCR API Key（可选，用于验证码识别）
+   - `SECRET_KEY`: 百度OCR Secret Key（可选，用于验证码识别）
+   - `IYUU_TOKEN`: IYUU 通知令牌（可选，用于接收签到通知）
+
+3. 启用 GitHub Actions，脚本将每天自动运行（默认 UTC 0:00，北京时间 8:00）
+4. 也可以手动触发：在 Actions 页面选择"自动签到"工作流，点击"Run workflow"
+
+### 方式二：本地定时任务
+
 可以通过Linux的crontab设置定时任务，实现每天自动签到：
 
 ```bash
@@ -96,7 +154,7 @@ DEBUG=1 python auto_sign.py
 crontab -e
 
 # 添加以下内容，设置每天上午8:30执行签到脚本
-30 8 * * * cd /path/to/script && python auto_sign.py
+30 8 * * * cd /path/to/script && python fnclub_signer.py
 ```
 
 对于Windows系统，可以使用计划任务：
@@ -169,5 +227,17 @@ crontab -e
 ### Cookie管理优化
 - 更新了save_cookies函数，保存完整的Cookie信息，包括域名、路径、过期时间等
 - 优化了load_cookies函数，使其能够处理新旧两种格式的Cookie文件，确保向后兼容性
+
+### GitHub Actions 支持
+- 添加了 `.github/workflows/auto-sign.yml` 工作流文件
+- 支持定时自动运行（每天 UTC 0:00，北京时间 8:00）
+- 支持手动触发运行
+- 自动上传日志文件作为 Artifact
+
+### IYUU 通知功能
+- 集成了 IYUU 通知服务
+- 在签到成功、失败、异常等情况下自动发送通知
+- 支持通过环境变量 `IYUU_TOKEN` 配置通知令牌
+- 通知内容包含详细的签到信息和状态
 
 [![Star History Chart](https://api.star-history.com/svg?repos=kggzs/FN_AQ&type=Date)](https://www.star-history.com/#kggzs/FN_AQ&Date)
