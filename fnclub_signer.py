@@ -139,11 +139,14 @@ class FNSignIn:
             # 检查是否有个人中心链接
             user_center_links = soup.select('a[href*="home.php?mod=space"]')
             
-            # 输出详细的登录状态检测信息
-            logger.debug(f"登录状态检测: 登录链接数量={len(login_links)}, 用户名在页面中={username_in_page}, 个人中心链接数量={len(user_center_links)}")
+            # 检查是否有退出登录链接（更可靠的已登录标识）
+            logout_links = soup.select('a[href*="member.php?mod=logging&action=logout"]')
             
-            # 如果没有登录链接或者页面中包含用户名，则认为已登录
-            if (len(login_links) == 0 or username_in_page) and len(user_center_links) > 0:
+            # 输出详细的登录状态检测信息
+            logger.debug(f"登录状态检测: 登录链接数量={len(login_links)}, 退出链接数量={len(logout_links)}, 用户名在页面中={username_in_page}, 个人中心链接数量={len(user_center_links)}")
+            
+            # 如果有退出链接，或者（没有登录链接且（有个人中心链接或用户名在页面中）），则认为已登录
+            if len(logout_links) > 0 or ((len(login_links) == 0 or username_in_page) and len(user_center_links) > 0):
                 logger.info("Cookie有效，已登录状态")
                 return True
             else:
@@ -419,34 +422,61 @@ class FNSignIn:
                     'Upgrade-Insecure-Requests': '1'
                 })
                 
-                # 构建登录URL
-                login_url = f"{Config.LOGIN_URL}&loginsubmit=yes&inajax=1"
+                # 构建登录URL - 优先使用表单的action，如果没有则使用默认URL
+                if form_action and form_action.startswith('member.php'):
+                    # 如果action是相对路径，补全为完整URL
+                    if not form_action.startswith('http'):
+                        login_url = Config.BASE_URL + form_action
+                    else:
+                        login_url = form_action
+                else:
+                    # 使用默认登录URL
+                    login_url = f"{Config.LOGIN_URL}&loginsubmit=yes&inajax=1"
                 
                 # 发送登录请求
                 login_response = self.session.post(login_url, data=login_data, allow_redirects=True)
                 
                 # 添加更多调试信息
-                logger.debug(f"登录请求URL: {login_url}")
+                logger.info(f"登录请求URL: {login_url}")
                 logger.debug(f"登录请求数据: {login_data}")
-                logger.debug(f"登录响应状态码: {login_response.status_code}")
-                logger.debug(f"登录响应内容: {login_response.text[:500]}...")
+                logger.info(f"登录响应状态码: {login_response.status_code}")
+                logger.info(f"登录响应内容前500字符: {login_response.text[:500]}")
                 
                 # 检查登录结果
-                if '验证码' in login_response.text and '验证码错误' in login_response.text:
+                if '验证码' in login_response.text and ('验证码错误' in login_response.text or '验证码不正确' in login_response.text):
                     logger.error(f"验证码错误，登录失败，重试({retry+1}/{Config.MAX_RETRIES})")
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
                     return False
                 
-                # 检查登录是否成功
-                if 'succeedhandle_' in login_response.text or self.check_login_status():
+                # 检查登录响应中的错误信息
+                if '登录失败' in login_response.text or '密码错误' in login_response.text or '用户名不存在' in login_response.text:
+                    logger.error(f"登录失败（账号或密码错误），响应内容: {login_response.text[:300]}")
+                    if retry < Config.MAX_RETRIES - 1:
+                        time.sleep(Config.RETRY_DELAY)
+                        continue
+                    return False
+                
+                # 检查登录是否成功 - 先检查响应文本，再检查登录状态
+                login_success = False
+                if 'succeedhandle_' in login_response.text or '登录成功' in login_response.text or '欢迎您回来' in login_response.text:
+                    login_success = True
+                    logger.info("从登录响应中检测到成功标识")
+                else:
+                    # 登录后等待一下，让Cookie生效
+                    time.sleep(1)
+                    if self.check_login_status():
+                        login_success = True
+                        logger.info("通过状态检查确认登录成功")
+                
+                if login_success:
                     logger.info(f"账号 {Config.USERNAME} 登录成功")
                     self.save_cookies()
                     return True
                 else:
                     logger.error(f"登录失败，请检查账号密码，重试({retry+1}/{Config.MAX_RETRIES})")
-                    logger.debug(f"登录响应: {login_response.text[:200]}...")
+                    logger.error(f"登录响应内容: {login_response.text[:500]}")
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
