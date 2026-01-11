@@ -28,6 +28,8 @@ pip install requests beautifulsoup4
 
 ## 使用方法
 
+### 本地运行
+
 1. 确保已安装所需依赖
 2. 修改脚本中的账号密码（Config类中的USERNAME和PASSWORD）
 3. 配置百度OCR API的API_KEY和SECRET_KEY（如需使用验证码识别功能）
@@ -41,16 +43,45 @@ python fnclub_signer.py
 
 可以通过环境变量设置配置信息，无需修改代码：
 
+#### Windows 系统
+
+**方法一：命令行临时设置**
 ```bash
-# Windows
 set USERNAME=your_username
 set PASSWORD=your_password
 set API_KEY=your_api_key
 set SECRET_KEY=your_secret_key
 set IYUU_TOKEN=your_iyuu_token
 python fnclub_signer.py
+```
 
-# Linux/Mac
+**方法二：PowerShell 临时设置**
+```powershell
+$env:USERNAME="your_username"
+$env:PASSWORD="your_password"
+$env:API_KEY="your_api_key"
+$env:SECRET_KEY="your_secret_key"
+$env:IYUU_TOKEN="your_iyuu_token"
+python fnclub_signer.py
+```
+
+**方法三：系统环境变量（永久设置）**
+1. 右键点击"此电脑" → 选择"属性"
+2. 点击"高级系统设置"
+3. 点击"环境变量"
+4. 在"用户变量"或"系统变量"中点击"新建"
+5. 添加以下变量：
+   - 变量名：`USERNAME`，变量值：`你的用户名`
+   - 变量名：`PASSWORD`，变量值：`你的密码`
+   - 变量名：`API_KEY`，变量值：`你的API Key`（可选）
+   - 变量名：`SECRET_KEY`，变量值：`你的Secret Key`（可选）
+   - 变量名：`IYUU_TOKEN`，变量值：`你的IYUU Token`（可选）
+6. 点击"确定"保存
+
+#### Linux/Mac 系统
+
+**方法一：命令行临时设置**
+```bash
 export USERNAME=your_username
 export PASSWORD=your_password
 export API_KEY=your_api_key
@@ -58,6 +89,43 @@ export SECRET_KEY=your_secret_key
 export IYUU_TOKEN=your_iyuu_token
 python fnclub_signer.py
 ```
+
+**方法二：永久设置（推荐）**
+编辑 `~/.bashrc`（或 `~/.zshrc`）文件：
+```bash
+# 使用 nano 编辑器
+nano ~/.bashrc
+
+# 或使用 vim 编辑器
+vim ~/.bashrc
+```
+
+在文件末尾添加：
+```bash
+export USERNAME="your_username"
+export PASSWORD="your_password"
+export API_KEY="your_api_key"
+export SECRET_KEY="your_secret_key"
+export IYUU_TOKEN="your_iyuu_token"
+```
+
+保存后执行：
+```bash
+source ~/.bashrc
+```
+
+**方法三：使用 .env 文件（Python 需安装 python-dotenv）**
+1. 在脚本目录创建 `.env` 文件
+2. 添加以下内容：
+```
+USERNAME=your_username
+PASSWORD=your_password
+API_KEY=your_api_key
+SECRET_KEY=your_secret_key
+IYUU_TOKEN=your_iyuu_token
+```
+3. 安装 python-dotenv：`pip install python-dotenv`
+4. 在脚本开头添加：`from dotenv import load_dotenv; load_dotenv()`
 
 ## 配置说明
 
@@ -124,26 +192,90 @@ class Config:
 ```bash
 # Windows
 set DEBUG=1
-python auto_sign.py
+python fnclub_signer.py
 
 # Linux/Mac
-DEBUG=1 python auto_sign.py
+DEBUG=1 python fnclub_signer.py
 ```
 
 ## 自动化部署
 
 ### 方式一：GitHub Actions（推荐）
 
-1. Fork 本仓库到你的 GitHub 账号
-2. 在仓库设置中添加以下 Secrets：
-   - `USERNAME`: FN论坛用户名
-   - `PASSWORD`: FN论坛密码
-   - `API_KEY`: 百度OCR API Key（可选，用于验证码识别）
-   - `SECRET_KEY`: 百度OCR Secret Key（可选，用于验证码识别）
-   - `IYUU_TOKEN`: IYUU 通知令牌（可选，用于接收签到通知）
+使用 GitHub Actions 可以免费自动化运行签到脚本，无需自己的服务器。
 
-3. 启用 GitHub Actions，脚本将每天自动运行（默认 UTC 0:00，北京时间 8:00）
-4. 也可以手动触发：在 Actions 页面选择"自动签到"工作流，点击"Run workflow"
+#### 第一步：Fork 仓库
+
+1. 登录 GitHub 账号
+2. 访问本仓库：https://github.com/your-username/FN_AQ（替换为实际仓库地址）
+3. 点击右上角的 "Fork" 按钮
+4. 选择要 Fork 到的账号/组织
+5. 等待 Fork 完成
+
+#### 第二步：设置 GitHub Secrets（环境变量）
+
+1. 进入你 Fork 后的仓库页面
+2. 点击仓库顶部的 **"Settings"**（设置）选项卡
+3. 在左侧菜单中选择 **"Secrets and variables"** → **"Actions"**
+4. 点击右上角的 **"New repository secret"** 按钮
+5. 依次添加以下 Secrets：
+
+   **必填项：**
+   
+   - **Name**: `USERNAME`
+     - **Value**: 你的 FN论坛用户名
+   
+   - **Name**: `PASSWORD`
+     - **Value**: 你的 FN论坛密码
+   
+   **可选项（建议配置）：**
+   
+   - **Name**: `API_KEY`
+     - **Value**: 百度OCR API Key（用于验证码识别，如果论坛需要验证码时使用）
+   
+   - **Name**: `SECRET_KEY`
+     - **Value**: 百度OCR Secret Key（用于验证码识别）
+   
+   - **Name**: `IYUU_TOKEN`
+     - **Value**: IYUU 通知令牌（用于接收签到通知，获取方式见下方"IYUU 通知配置"）
+
+6. 每添加一个 Secret 后，点击 **"Add secret"** 保存
+7. 重复以上步骤，直到添加完所有需要的 Secrets
+
+**注意：**
+- Secrets 是加密存储的，不会在代码中显示
+- 可以随时在 Settings → Secrets 中修改或删除
+- Secret 名称必须完全匹配（区分大小写）
+
+#### 第三步：启用 GitHub Actions
+
+1. 在仓库页面，点击顶部的 **"Actions"** 选项卡
+2. 如果是第一次使用 Actions，可能会看到提示，点击 **"I understand my workflows, go ahead and enable them"**（我了解我的工作流，继续启用它们）
+3. 在左侧菜单中选择 **"自动签到"** 工作流
+4. 脚本将每天**北京时间 0:00**自动运行
+
+#### 第四步：手动触发测试（可选）
+
+1. 在 Actions 页面，选择 **"自动签到"** 工作流
+2. 点击右侧的 **"Run workflow"** 按钮
+3. 选择分支（默认 main 或 master）
+4. 点击 **"Run workflow"** 确认
+5. 等待工作流运行完成，查看运行日志
+
+#### 查看运行日志
+
+1. 在 Actions 页面，点击对应的运行记录
+2. 点击 **"运行签到脚本"** 步骤可以查看详细日志
+3. 点击 **"上传日志"** 步骤可以下载日志文件
+
+#### 定时说明
+
+- 默认运行时间：**每天北京时间 0:00**（UTC 16:00）
+- 如需修改运行时间，编辑 `.github/workflows/auto-sign.yml` 文件中的 cron 表达式
+- Cron 格式：`分 时 日 月 星期`（UTC 时间）
+  - 北京时间 0:00 = UTC 16:00（前一天）= `0 16 * * *`
+  - 北京时间 8:00 = UTC 0:00 = `0 0 * * *`
+  - 北京时间 12:00 = UTC 4:00 = `0 4 * * *`
 
 ### 方式二：本地定时任务
 
