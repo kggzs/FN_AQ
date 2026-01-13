@@ -501,6 +501,7 @@ class FNSignIn:
                 # 查找签到按钮
                 sign_btn = soup.select_one('.signbtn .btna')
                 if not sign_btn:
+                    logger.debug(f"签到页HTML片段: {response.text[:500]}")
                     logger.error(f"未找到签到按钮，重试({retry+1}/{Config.MAX_RETRIES})")
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
@@ -515,6 +516,7 @@ class FNSignIn:
                 if sign_link and not sign_link.startswith('http'):
                     sign_link = Config.BASE_URL + sign_link.lstrip('/')
                 
+                logger.debug(f"签到按钮文本: {sign_text}，href: {sign_link}")
                 return sign_text, sign_link
             except Exception as e:
                 logger.error(f"检查签到状态失败: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
@@ -538,11 +540,12 @@ class FNSignIn:
                 logger.info(f"签到请求URL: {sign_url}")
                 logger.debug(f"签到响应状态码: {response.status_code}")
                 logger.debug(f"签到响应内容前300字符: {response.text[:300]}")
+                logger.debug(f"签到响应最终URL: {response.url}")
                 
                 # 检查签到结果
                 if response.status_code == 200:
                     # 响应内容直接包含成功提示则认为成功
-                    if any(keyword in response.text for keyword in ["今日已打卡", "签到成功", "打卡成功", "已签到"]):
+                    if any(keyword in response.text for keyword in ["今日已打卡", "签到成功", "打卡成功", "已签到", "成功签到", "签到成功啦"]):
                         logger.info("签到成功（从响应内容判断）")
                         return True
                     
@@ -554,6 +557,8 @@ class FNSignIn:
                         logger.info("签到成功")
                         return True
                     else:
+                        logger.debug(f"签到后状态检查返回: sign_text={sign_text}")
+                        logger.debug(f"签到响应内容前800字符: {response.text[:800]}")
                         logger.error(f"签到请求已发送，但状态未更新，重试({retry+1}/{Config.MAX_RETRIES})")
                         if retry < Config.MAX_RETRIES - 1:
                             time.sleep(Config.RETRY_DELAY)
