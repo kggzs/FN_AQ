@@ -501,7 +501,6 @@ class FNSignIn:
                 # 查找签到按钮
                 sign_btn = soup.select_one('.signbtn .btna')
                 if not sign_btn:
-                    logger.debug(f"签到页HTML片段: {response.text[:500]}")
                     logger.error(f"未找到签到按钮，重试({retry+1}/{Config.MAX_RETRIES})")
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
@@ -512,12 +511,14 @@ class FNSignIn:
                 sign_text = sign_btn.text.strip()
                 sign_link = sign_btn.get('href')
                 
-                # 统一返回完整签到链接，避免遗漏附加参数
-                if sign_link and not sign_link.startswith('http'):
-                    sign_link = Config.BASE_URL + sign_link.lstrip('/')
+                # 提取sign参数
+                sign_param = None
+                if sign_link:
+                    match = re.search(r'sign=([^&]+)', sign_link)
+                    if match:
+                        sign_param = match.group(1)
                 
-                logger.debug(f"签到按钮文本: {sign_text}，href: {sign_link}")
-                return sign_text, sign_link
+                return sign_text, sign_param
             except Exception as e:
                 logger.error(f"检查签到状态失败: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
                 if retry < Config.MAX_RETRIES - 1:
@@ -525,40 +526,21 @@ class FNSignIn:
                     continue
                 return None, None
     
-    def do_sign(self, sign_link):
+    def do_sign(self, sign_param):
         """执行签到，带重试机制"""
         for retry in range(Config.MAX_RETRIES):
             try:
-                sign_url = sign_link or Config.SIGN_URL
-                
-                # 添加 Referer 提高成功率
-                self.session.headers.update({
-                    'Referer': Config.SIGN_URL
-                })
-                
-                response = self.session.get(sign_url, allow_redirects=True)
-                logger.info(f"签到请求URL: {sign_url}")
-                logger.debug(f"签到响应状态码: {response.status_code}")
-                logger.debug(f"签到响应内容前300字符: {response.text[:300]}")
-                logger.debug(f"签到响应最终URL: {response.url}")
+                sign_url = f"{Config.SIGN_URL}&sign={sign_param}"
+                response = self.session.get(sign_url)
                 
                 # 检查签到结果
                 if response.status_code == 200:
-                    # 响应内容直接包含成功提示则认为成功
-                    if any(keyword in response.text for keyword in ["今日已打卡", "签到成功", "打卡成功", "已签到", "成功签到", "签到成功啦"]):
-                        logger.info("签到成功（从响应内容判断）")
-                        return True
-                    
-                    # 等待片刻再检查页面状态，避免延迟导致的误判
-                    time.sleep(1.5)
                     # 再次检查签到状态
                     sign_text, _ = self.check_sign_status()
                     if sign_text == "今日已打卡":
                         logger.info("签到成功")
                         return True
                     else:
-                        logger.debug(f"签到后状态检查返回: sign_text={sign_text}")
-                        logger.debug(f"签到响应内容前800字符: {response.text[:800]}")
                         logger.error(f"签到请求已发送，但状态未更新，重试({retry+1}/{Config.MAX_RETRIES})")
                         if retry < Config.MAX_RETRIES - 1:
                             time.sleep(Config.RETRY_DELAY)
@@ -669,8 +651,8 @@ class FNSignIn:
                 return False
         
         # 检查签到状态
-        sign_text, sign_link = self.check_sign_status()
-        if sign_text is None or sign_link is None:
+        sign_text, sign_param = self.check_sign_status()
+        if sign_text is None or sign_param is None:
             logger.error("获取签到状态失败，签到流程终止")
             self.send_notification("FN论坛签到失败", "获取签到状态失败，请检查网络连接")
             return False
@@ -680,7 +662,7 @@ class FNSignIn:
         # 如果未签到，执行签到
         if sign_text == "点击打卡":
             logger.info("开始执行签到...")
-            if self.do_sign(sign_link):
+            if self.do_sign(sign_param):
                 # 获取并记录签到信息
                 sign_info = self.get_sign_info()
                 info_text = ""
