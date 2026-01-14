@@ -456,7 +456,8 @@ class FNSignIn:
                 logger.info(f"登录请求URL: {login_url}")
                 logger.debug(f"登录请求数据: {login_data}")
                 logger.info(f"登录响应状态码: {login_response.status_code}")
-                logger.info(f"登录响应内容前500字符: {login_response.text[:500]}")
+                logger.info(f"登录响应完整内容: {login_response.text}")
+
                 
                 # 检查登录结果
                 if '验证码' in login_response.text and ('验证码错误' in login_response.text or '验证码不正确' in login_response.text):
@@ -494,7 +495,7 @@ class FNSignIn:
                     return True
                 else:
                     logger.error(f"登录失败，请检查账号密码，重试({retry+1}/{Config.MAX_RETRIES})")
-                    logger.error(f"登录响应内容: {login_response.text[:500]}")
+                    logger.info(f"登录响应内容: {login_response.text}")
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
