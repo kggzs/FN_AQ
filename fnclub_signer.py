@@ -62,6 +62,17 @@ class Config:
         """获取 IYUU 通知 API URL"""
         token = os.environ.get('IYUU_TOKEN', Config.IYUU_TOKEN)
         return f'https://iyuu.cn/{token}.send'
+    
+    @staticmethod
+    def is_actions_env():
+        """判断是否运行在 GitHub Actions / CI 环境"""
+        # GitHub Actions 会自动注入 GITHUB_ACTIONS 环境变量为 'true'
+        if os.environ.get('GITHUB_ACTIONS', '').lower() == 'true':
+            return True
+        # 兼容其他 CI 系统
+        if os.environ.get('CI', '').lower() == 'true':
+            return True
+        return False
 
 class FNSignIn:
     def __init__(self):
@@ -71,7 +82,12 @@ class FNSignIn:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
         })
-        self.load_cookies()
+        
+        # 本地环境默认优先使用 Cookie；Actions/CI 环境下不加载本地 Cookie，强制走账号密码登录
+        if not Config.is_actions_env():
+            self.load_cookies()
+        else:
+            logger.info("检测到 CI / GitHub Actions 环境：跳过本地 Cookie 加载，每次使用环境变量重新登录")
     
     def load_cookies(self):
         """从文件加载Cookie"""
@@ -472,7 +488,9 @@ class FNSignIn:
                 
                 if login_success:
                     logger.info(f"账号 {Config.USERNAME} 登录成功")
-                    self.save_cookies()
+                    # 本地环境保存 Cookie，Actions / CI 环境只在当前会话中使用，不落盘
+                    if not Config.is_actions_env():
+                        self.save_cookies()
                     return True
                 else:
                     logger.error(f"登录失败，请检查账号密码，重试({retry+1}/{Config.MAX_RETRIES})")
@@ -642,13 +660,21 @@ class FNSignIn:
         """运行签到流程，带重试机制"""
         logger.info("===== 开始运行签到脚本 =====")
         
-        # 检查登录状态
-        if not self.check_login_status():
-            # 如果未登录，尝试登录
+        # 在 CI / GitHub Actions 环境下，不使用本地 Cookie，每次强制账号密码登录
+        if Config.is_actions_env():
+            logger.info("CI / GitHub Actions 环境：跳过 Cookie 登录检测，直接使用环境变量登录")
             if not self.login():
                 logger.error("登录失败，签到流程终止")
                 self.send_notification("FN论坛签到失败", "登录失败，请检查账号密码或网络连接")
                 return False
+        else:
+            # 本地环境优先尝试使用已有 Cookie，减少登录次数
+            if not self.check_login_status():
+                # 如果未登录，尝试登录
+                if not self.login():
+                    logger.error("登录失败，签到流程终止")
+                    self.send_notification("FN论坛签到失败", "登录失败，请检查账号密码或网络连接")
+                    return False
         
         # 检查签到状态
         sign_text, sign_param = self.check_sign_status()
