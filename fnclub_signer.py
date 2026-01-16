@@ -51,6 +51,9 @@ class Config:
     MAX_RETRIES = 3  # 最大重试次数
     RETRY_DELAY = 2  # 重试间隔(秒)
     
+    # 请求超时设置（秒）
+    REQUEST_TIMEOUT = 30  # HTTP请求超时时间
+    
     # Token缓存文件
     TOKEN_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_cache.json')
     
@@ -183,7 +186,7 @@ class FNSignIn:
     def check_login_status(self):
         """检查登录状态"""
         try:
-            response = self.session.get(Config.BASE_URL)
+            response = self.session.get(Config.BASE_URL, timeout=Config.REQUEST_TIMEOUT)
             soup = BeautifulSoup(response.text, 'html.parser')
             
             # 检查是否存在登录链接，如果存在则表示未登录
@@ -208,8 +211,14 @@ class FNSignIn:
             else:
                 logger.info("Cookie无效或已过期，需要重新登录")
                 return False
+        except requests.exceptions.Timeout:
+            logger.error(f"检查登录状态失败: 请求超时（超过{Config.REQUEST_TIMEOUT}秒）")
+            return False
+        except requests.exceptions.ConnectionError:
+            logger.error(f"检查登录状态失败: 网络连接错误，请检查网络连接")
+            return False
         except Exception as e:
-            logger.error(f"检查登录状态失败: {e}")
+            logger.error(f"检查登录状态失败: {type(e).__name__}: {e}")
             return False
     
     def get_access_token(self):
@@ -279,7 +288,7 @@ class FNSignIn:
         for retry in range(Config.MAX_RETRIES):
             try:
                 # 下载验证码图片
-                captcha_response = self.session.get(captcha_url)
+                captcha_response = self.session.get(captcha_url, timeout=Config.REQUEST_TIMEOUT)
                 if captcha_response.status_code != 200:
                     logger.error(f"下载验证码图片失败，状态码: {captcha_response.status_code}，重试({retry+1}/{Config.MAX_RETRIES})")
                     if retry < Config.MAX_RETRIES - 1:
@@ -356,7 +365,7 @@ class FNSignIn:
         for retry in range(Config.MAX_RETRIES):
             try:
                 # 获取登录页面
-                response = self.session.get(Config.LOGIN_URL)
+                response = self.session.get(Config.LOGIN_URL, timeout=Config.REQUEST_TIMEOUT)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 
                 # 获取登录表单信息
@@ -387,10 +396,6 @@ class FNSignIn:
                         continue
                     return False
                     
-                # 提取登录表单ID中的随机部分
-                form_id = login_form.get('id', '')
-                login_hash = form_id.split('_')[-1] if '_' in form_id else ''
-                
                 # 获取登录表单的action属性
                 form_action = login_form.get('action', '')
                 logger.info(f"找到登录表单: ID={form_id}, Action={form_action}")
@@ -490,7 +495,7 @@ class FNSignIn:
                     login_url = f"{Config.LOGIN_URL}&loginsubmit=yes&inajax=1"
                 
                 # 发送登录请求
-                login_response = self.session.post(login_url, data=login_data, allow_redirects=True)
+                login_response = self.session.post(login_url, data=login_data, allow_redirects=True, timeout=Config.REQUEST_TIMEOUT)
                 
                 # 添加更多调试信息
                 logger.info(f"登录请求URL: {login_url}")
@@ -524,7 +529,7 @@ class FNSignIn:
                         logger.info(f"提取到验证码页面URL: {redirect_url}")
                         
                         # 访问验证码页面
-                        captcha_page_response = self.session.get(redirect_url)
+                        captcha_page_response = self.session.get(redirect_url, timeout=Config.REQUEST_TIMEOUT)
                         captcha_page_soup = BeautifulSoup(captcha_page_response.text, 'html.parser')
                         
                         # 查找验证码输入框
@@ -605,7 +610,7 @@ class FNSignIn:
                             logger.info(f"使用验证码重新登录，URL: {login_url}")
                             
                             # 重新发送登录请求
-                            login_response = self.session.post(login_url, data=login_data, allow_redirects=True)
+                            login_response = self.session.post(login_url, data=login_data, allow_redirects=True, timeout=Config.REQUEST_TIMEOUT)
                             logger.info(f"重新登录响应状态码: {login_response.status_code}")
                             logger.info("=" * 80)
                             logger.info("【重新登录响应内容 - 开始】")
@@ -655,7 +660,7 @@ class FNSignIn:
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
-                        return False
+                    return False
                 
                 # 检查登录是否成功 - 先检查响应文本，再检查登录状态
                 login_success = False
@@ -687,9 +692,21 @@ class FNSignIn:
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
-                        return False
+                    return False
+            except requests.exceptions.Timeout:
+                logger.error(f"登录过程发生错误: 请求超时（超过{Config.REQUEST_TIMEOUT}秒），重试({retry+1}/{Config.MAX_RETRIES})")
+                if retry < Config.MAX_RETRIES - 1:
+                    time.sleep(Config.RETRY_DELAY)
+                    continue
+                return False
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"登录过程发生错误: 网络连接错误，请检查网络连接，重试({retry+1}/{Config.MAX_RETRIES})")
+                if retry < Config.MAX_RETRIES - 1:
+                    time.sleep(Config.RETRY_DELAY)
+                    continue
+                return False
             except Exception as e:
-                logger.error(f"登录过程发生错误: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
+                logger.error(f"登录过程发生错误: {type(e).__name__}: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
                 if retry < Config.MAX_RETRIES - 1:
                     time.sleep(Config.RETRY_DELAY)
                     continue
@@ -702,7 +719,7 @@ class FNSignIn:
         """检查签到状态，带重试机制"""
         for retry in range(Config.MAX_RETRIES):
             try:
-                response = self.session.get(Config.SIGN_URL)
+                response = self.session.get(Config.SIGN_URL, timeout=Config.REQUEST_TIMEOUT)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 
                 # 查找签到按钮
@@ -726,8 +743,20 @@ class FNSignIn:
                         sign_param = match.group(1)
                 
                 return sign_text, sign_param
+            except requests.exceptions.Timeout:
+                logger.error(f"检查签到状态失败: 请求超时（超过{Config.REQUEST_TIMEOUT}秒），重试({retry+1}/{Config.MAX_RETRIES})")
+                if retry < Config.MAX_RETRIES - 1:
+                    time.sleep(Config.RETRY_DELAY)
+                    continue
+                return None, None
+            except requests.exceptions.ConnectionError:
+                logger.error(f"检查签到状态失败: 网络连接错误，请检查网络连接，重试({retry+1}/{Config.MAX_RETRIES})")
+                if retry < Config.MAX_RETRIES - 1:
+                    time.sleep(Config.RETRY_DELAY)
+                    continue
+                return None, None
             except Exception as e:
-                logger.error(f"检查签到状态失败: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
+                logger.error(f"检查签到状态失败: {type(e).__name__}: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
                 if retry < Config.MAX_RETRIES - 1:
                     time.sleep(Config.RETRY_DELAY)
                     continue
@@ -738,7 +767,7 @@ class FNSignIn:
         for retry in range(Config.MAX_RETRIES):
             try:
                 sign_url = f"{Config.SIGN_URL}&sign={sign_param}"
-                response = self.session.get(sign_url)
+                response = self.session.get(sign_url, timeout=Config.REQUEST_TIMEOUT)
                 
                 # 检查签到结果
                 if response.status_code == 200:
@@ -770,7 +799,7 @@ class FNSignIn:
         """获取签到信息，带重试机制"""
         for retry in range(Config.MAX_RETRIES):
             try:
-                response = self.session.get(Config.SIGN_URL)
+                response = self.session.get(Config.SIGN_URL, timeout=Config.REQUEST_TIMEOUT)
                 soup = BeautifulSoup(response.text, 'html.parser')
                 
                 # 查找签到信息区域
@@ -814,8 +843,8 @@ class FNSignIn:
     def send_notification(self, title, content):
         """发送 IYUU 通知"""
         try:
-            token = os.environ.get('IYUU_TOKEN', Config.IYUU_TOKEN)
-            if not token or token == 'your_iyuu_token':
+            token = Config.IYUU_TOKEN
+            if not token or token.strip() == '':
                 logger.warning("IYUU Token 未配置，跳过通知发送")
                 return False
             
