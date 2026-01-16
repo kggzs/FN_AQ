@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 # 配置信息
 class Config:
-    # 账号信息（优先从环境变量读取）
-    USERNAME = os.environ.get('USERNAME', 'your_username')  # 修改为你的用户名
-    PASSWORD = os.environ.get('PASSWORD', 'your_password')  # 修改为你的密码
+    # 账号信息（必须从环境变量读取）
+    USERNAME = os.environ.get('USERNAME', '')
+    PASSWORD = os.environ.get('PASSWORD', '')
     
     # 网站URL
     BASE_URL = 'https://club.fnnas.com/'
@@ -42,10 +42,10 @@ class Config:
     # Cookie文件路径
     COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.json')
     
-    # 验证码识别API (百度OCR API)（优先从环境变量读取）
+    # 验证码识别API (百度OCR API)（必须从环境变量读取）
     CAPTCHA_API_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
-    API_KEY = os.environ.get('API_KEY', "your_api_key")  # 替换为你的百度OCR API Key
-    SECRET_KEY = os.environ.get('SECRET_KEY', "your_secret_key")  # 替换为你的百度OCR Secret Key
+    API_KEY = os.environ.get('API_KEY', '')
+    SECRET_KEY = os.environ.get('SECRET_KEY', '')
     
     # 重试设置
     MAX_RETRIES = 3  # 最大重试次数
@@ -54,13 +54,13 @@ class Config:
     # Token缓存文件
     TOKEN_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_cache.json')
     
-    # IYUU 通知配置 - 访问：https://iyuu.cn/ 微信扫描后获取Token
-    IYUU_TOKEN = os.environ.get('IYUU_TOKEN', 'IYUU--------------------------------------------71')
+    # IYUU 通知配置 - 访问：https://iyuu.cn/ 微信扫描后获取Token（可选）
+    IYUU_TOKEN = os.environ.get('IYUU_TOKEN', '')
     
     @staticmethod
     def get_iyuu_url():
         """获取 IYUU 通知 API URL"""
-        token = os.environ.get('IYUU_TOKEN', Config.IYUU_TOKEN)
+        token = Config.IYUU_TOKEN
         return f'https://iyuu.cn/{token}.send'
     
     @staticmethod
@@ -73,6 +73,46 @@ class Config:
         if os.environ.get('CI', '').lower() == 'true':
             return True
         return False
+    
+    @staticmethod
+    def check_required_env_vars():
+        """检查必需的环境变量是否已设置"""
+        missing_vars = []
+        
+        # 必需的环境变量
+        required_vars = {
+            'USERNAME': Config.USERNAME,
+            'PASSWORD': Config.PASSWORD,
+            'API_KEY': Config.API_KEY,
+            'SECRET_KEY': Config.SECRET_KEY
+        }
+        
+        for var_name, var_value in required_vars.items():
+            if not var_value or var_value.strip() == '':
+                missing_vars.append(var_name)
+        
+        if missing_vars:
+            error_msg = f"错误：以下必需的环境变量未设置：{', '.join(missing_vars)}\n"
+            error_msg += "请通过环境变量设置这些值后再运行脚本。\n"
+            error_msg += "详细配置方法请参考 README.md 文件。"
+            return False, error_msg, missing_vars
+        
+        # 可选的环境变量（仅提示）
+        optional_vars = {
+            'IYUU_TOKEN': Config.IYUU_TOKEN
+        }
+        
+        missing_optional = []
+        for var_name, var_value in optional_vars.items():
+            if not var_value or var_value.strip() == '':
+                missing_optional.append(var_name)
+        
+        info_msg = ""
+        if missing_optional:
+            info_msg = f"提示：以下可选的环境变量未设置：{', '.join(missing_optional)}\n"
+            info_msg += "这些变量不是必需的，但建议配置以使用完整功能。\n"
+        
+        return True, info_msg, []
 
 class FNSignIn:
     def __init__(self):
@@ -456,8 +496,143 @@ class FNSignIn:
                 logger.info(f"登录请求URL: {login_url}")
                 logger.debug(f"登录请求数据: {login_data}")
                 logger.info(f"登录响应状态码: {login_response.status_code}")
-                logger.info(f"登录响应完整内容: {login_response.text}")
+                logger.info("=" * 80)
+                logger.info("【登录响应完整内容 - 开始】")
+                logger.info("=" * 80)
+                logger.info(login_response.text)
+                logger.info("=" * 80)
+                logger.info("【登录响应完整内容 - 结束】")
+                logger.info("=" * 80)
 
+                
+                # 检查是否需要跳转到验证码页面
+                if '请输入验证码后继续登录' in login_response.text:
+                    logger.info("检测到需要跳转到验证码页面，正在提取跳转URL...")
+                    
+                    # 从JavaScript代码中提取跳转URL
+                    # 匹配 location.href='...' 或 location.href="..."
+                    url_match = re.search(r"location\.href=['\"]([^'\"]+)['\"]", login_response.text)
+                    if url_match:
+                        redirect_url = url_match.group(1)
+                        # 如果是相对路径，补全为完整URL
+                        if not redirect_url.startswith('http'):
+                            if redirect_url.startswith('/'):
+                                redirect_url = Config.BASE_URL.rstrip('/') + redirect_url
+                            else:
+                                redirect_url = Config.BASE_URL + redirect_url
+                        
+                        logger.info(f"提取到验证码页面URL: {redirect_url}")
+                        
+                        # 访问验证码页面
+                        captcha_page_response = self.session.get(redirect_url)
+                        captcha_page_soup = BeautifulSoup(captcha_page_response.text, 'html.parser')
+                        
+                        # 查找验证码输入框
+                        seccodeverify = captcha_page_soup.find('input', {'name': 'seccodeverify'})
+                        if seccodeverify:
+                            # 获取验证码ID
+                            seccode_id = seccodeverify.get('id', '').replace('seccodeverify_', '')
+                            
+                            # 获取验证码图片URL
+                            captcha_img = captcha_page_soup.find('img', {'src': re.compile(r'misc\.php\?mod=seccode')})
+                            if not captcha_img:
+                                logger.error(f"在验证码页面未找到验证码图片，重试({retry+1}/{Config.MAX_RETRIES})")
+                                if retry < Config.MAX_RETRIES - 1:
+                                    time.sleep(Config.RETRY_DELAY)
+                                    continue
+                                return False
+                            
+                            captcha_url = Config.BASE_URL + captcha_img['src'] if not captcha_img['src'].startswith('http') else captcha_img['src']
+                            logger.info(f"验证码图片URL: {captcha_url}")
+                            
+                            # 识别验证码
+                            captcha_text = self.recognize_captcha(captcha_url)
+                            if not captcha_text:
+                                logger.error(f"验证码识别失败，重试({retry+1}/{Config.MAX_RETRIES})")
+                                if retry < Config.MAX_RETRIES - 1:
+                                    time.sleep(Config.RETRY_DELAY)
+                                    continue
+                                return False
+                            
+                            # 获取新的formhash
+                            formhash_input = captcha_page_soup.find('input', {'name': 'formhash'})
+                            if not formhash_input:
+                                logger.error(f"在验证码页面未找到formhash，重试({retry+1}/{Config.MAX_RETRIES})")
+                                if retry < Config.MAX_RETRIES - 1:
+                                    time.sleep(Config.RETRY_DELAY)
+                                    continue
+                                return False
+                            
+                            new_formhash = formhash_input.get('value', '')
+                            
+                            # 从跳转URL中提取auth参数
+                            auth_match = re.search(r'auth=([^&]+)', redirect_url)
+                            auth_param = auth_match.group(1) if auth_match else ''
+                            
+                            # 构建新的登录数据（包含验证码和auth参数）
+                            login_data = {
+                                'formhash': new_formhash,
+                                'referer': Config.BASE_URL,
+                                'loginfield': 'username',
+                                'username': Config.USERNAME,
+                                'password': Config.PASSWORD,
+                                'questionid': '0',
+                                'answer': '',
+                                'cookietime': '2592000',
+                                'loginsubmit': 'true',
+                                'seccodeverify': captcha_text,
+                                'seccodehash': seccode_id
+                            }
+                            
+                            # 如果有auth参数，添加到登录数据中
+                            if auth_param:
+                                login_data['auth'] = urllib.parse.unquote(auth_param)
+                            
+                            # 获取登录表单的action（可能不同）
+                            login_form = captcha_page_soup.find('form')
+                            form_action = login_form.get('action', '') if login_form else ''
+                            
+                            # 构建登录URL
+                            if form_action and form_action.startswith('member.php'):
+                                if not form_action.startswith('http'):
+                                    login_url = Config.BASE_URL + form_action
+                                else:
+                                    login_url = form_action
+                            else:
+                                # 使用跳转URL作为登录URL（去掉可能的锚点等）
+                                login_url = redirect_url.split('#')[0]
+                            
+                            logger.info(f"使用验证码重新登录，URL: {login_url}")
+                            
+                            # 重新发送登录请求
+                            login_response = self.session.post(login_url, data=login_data, allow_redirects=True)
+                            logger.info(f"重新登录响应状态码: {login_response.status_code}")
+                            logger.info("=" * 80)
+                            logger.info("【重新登录响应内容 - 开始】")
+                            logger.info("=" * 80)
+                            logger.info(login_response.text)
+                            logger.info("=" * 80)
+                            logger.info("【重新登录响应内容 - 结束】")
+                            logger.info("=" * 80)
+                        else:
+                            logger.error(f"在验证码页面未找到验证码输入框，重试({retry+1}/{Config.MAX_RETRIES})")
+                            if retry < Config.MAX_RETRIES - 1:
+                                time.sleep(Config.RETRY_DELAY)
+                                continue
+                            return False
+                    else:
+                        logger.error(f"无法从响应中提取跳转URL，重试({retry+1}/{Config.MAX_RETRIES})")
+                        logger.error("=" * 80)
+                        logger.error("【登录响应内容（无法提取跳转URL） - 开始】")
+                        logger.error("=" * 80)
+                        logger.error(login_response.text)
+                        logger.error("=" * 80)
+                        logger.error("【登录响应内容（无法提取跳转URL） - 结束】")
+                        logger.error("=" * 80)
+                        if retry < Config.MAX_RETRIES - 1:
+                            time.sleep(Config.RETRY_DELAY)
+                            continue
+                        return False
                 
                 # 检查登录结果
                 if '验证码' in login_response.text and ('验证码错误' in login_response.text or '验证码不正确' in login_response.text):
@@ -469,11 +644,18 @@ class FNSignIn:
                 
                 # 检查登录响应中的错误信息
                 if '登录失败' in login_response.text or '密码错误' in login_response.text or '用户名不存在' in login_response.text:
-                    logger.error(f"登录失败（账号或密码错误），响应内容: {login_response.text[:300]}")
+                    logger.error(f"登录失败（账号或密码错误）")
+                    logger.error("=" * 80)
+                    logger.error("【登录失败响应内容 - 开始】")
+                    logger.error("=" * 80)
+                    logger.error(login_response.text)
+                    logger.error("=" * 80)
+                    logger.error("【登录失败响应内容 - 结束】")
+                    logger.error("=" * 80)
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
-                    return False
+                        return False
                 
                 # 检查登录是否成功 - 先检查响应文本，再检查登录状态
                 login_success = False
@@ -495,11 +677,17 @@ class FNSignIn:
                     return True
                 else:
                     logger.error(f"登录失败，请检查账号密码，重试({retry+1}/{Config.MAX_RETRIES})")
-                    logger.info(f"登录响应内容: {login_response.text}")
+                    logger.error("=" * 80)
+                    logger.error("【登录失败响应内容 - 开始】")
+                    logger.error("=" * 80)
+                    logger.error(login_response.text)
+                    logger.error("=" * 80)
+                    logger.error("【登录失败响应内容 - 结束】")
+                    logger.error("=" * 80)
                     if retry < Config.MAX_RETRIES - 1:
                         time.sleep(Config.RETRY_DELAY)
                         continue
-                    return False
+                        return False
             except Exception as e:
                 logger.error(f"登录过程发生错误: {e}，重试({retry+1}/{Config.MAX_RETRIES})")
                 if retry < Config.MAX_RETRIES - 1:
@@ -734,6 +922,19 @@ if __name__ == "__main__":
         if os.environ.get('DEBUG') == '1':
             logger.setLevel(logging.DEBUG)
             logger.debug("调试模式已启用")
+        
+        # 检查必需的环境变量
+        logger.info("===== 环境变量检查 =====")
+        env_valid, env_msg, missing_vars = Config.check_required_env_vars()
+        if not env_valid:
+            logger.error(env_msg)
+            print(f"\n{env_msg}")
+            exit(1)
+        else:
+            logger.info("必需的环境变量检查通过")
+            if env_msg:
+                logger.info(env_msg)
+            logger.info("===== 环境变量检查完成 =====\n")
         
         # 创建签到实例并运行
         sign = FNSignIn()

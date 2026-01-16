@@ -28,24 +28,36 @@ pip install requests beautifulsoup4
 
 ## 使用方法
 
+### ⚠️ 重要提示
+
+**脚本现在仅支持通过环境变量配置，不再支持在代码中直接修改配置。**
+
+**必须设置以下环境变量：**
+- `USERNAME`: FN论坛用户名（必需）
+- `PASSWORD`: FN论坛密码（必需）
+- `API_KEY`: 百度OCR API Key（必需，用于验证码识别）
+- `SECRET_KEY`: 百度OCR Secret Key（必需，用于验证码识别）
+
+**可选环境变量：**
+- `IYUU_TOKEN`: IYUU 通知令牌（可选，用于接收签到通知）
+
 ### 本地运行
 
 1. 确保已安装所需依赖
-2. 修改脚本中的账号密码（Config类中的USERNAME和PASSWORD）
-3. 配置百度OCR API的API_KEY和SECRET_KEY（如需使用验证码识别功能）
-4. 运行脚本
+2. **必须通过环境变量设置配置信息**（见下方详细说明）
+3. 运行脚本
 
 ```bash
 python fnclub_signer.py
 ```
 
-### 使用环境变量配置（推荐）
+### 环境变量配置（必需）
 
-可以通过环境变量设置配置信息，无需修改代码：
+脚本在启动前会自动检查必需的环境变量，如果未设置，脚本将无法运行。
 
-#### Windows 系统
+**Windows 系统**
 
-**方法一：命令行临时设置**
+**方法一：命令行临时设置（CMD）**
 ```bash
 set USERNAME=your_username
 set PASSWORD=your_password
@@ -65,20 +77,26 @@ $env:IYUU_TOKEN="your_iyuu_token"
 python fnclub_signer.py
 ```
 
-**方法三：系统环境变量（永久设置）**
+**方法三：系统环境变量（永久设置，推荐）**
 1. 右键点击"此电脑" → 选择"属性"
 2. 点击"高级系统设置"
 3. 点击"环境变量"
 4. 在"用户变量"或"系统变量"中点击"新建"
 5. 添加以下变量：
-   - 变量名：`USERNAME`，变量值：`你的用户名`
-   - 变量名：`PASSWORD`，变量值：`你的密码`
-   - 变量名：`API_KEY`，变量值：`你的API Key`（可选）
-   - 变量名：`SECRET_KEY`，变量值：`你的Secret Key`（可选）
-   - 变量名：`IYUU_TOKEN`，变量值：`你的IYUU Token`（可选）
-6. 点击"确定"保存
 
-#### Linux/Mac 系统
+   **必需变量：**
+   - 变量名：`USERNAME`，变量值：`你的FN论坛用户名`
+   - 变量名：`PASSWORD`，变量值：`你的FN论坛密码`
+   - 变量名：`API_KEY`，变量值：`你的百度OCR API Key`
+   - 变量名：`SECRET_KEY`，变量值：`你的百度OCR Secret Key`
+   
+   **可选变量：**
+   - 变量名：`IYUU_TOKEN`，变量值：`你的IYUU Token`（用于接收签到通知）
+
+6. 点击"确定"保存
+7. **重要：** 重新打开命令行窗口，使环境变量生效
+
+**Linux/Mac 系统**
 
 **方法一：命令行临时设置**
 ```bash
@@ -102,11 +120,12 @@ vim ~/.bashrc
 
 在文件末尾添加：
 ```bash
-export USERNAME="your_username"
-export PASSWORD="your_password"
-export API_KEY="your_api_key"
-export SECRET_KEY="your_secret_key"
-export IYUU_TOKEN="your_iyuu_token"
+# FN论坛签到脚本环境变量
+export USERNAME="your_username"      # 必需：FN论坛用户名
+export PASSWORD="your_password"      # 必需：FN论坛密码
+export API_KEY="your_api_key"        # 必需：百度OCR API Key
+export SECRET_KEY="your_secret_key"  # 必需：百度OCR Secret Key
+export IYUU_TOKEN="your_iyuu_token"  # 可选：IYUU 通知令牌
 ```
 
 保存后执行：
@@ -125,49 +144,53 @@ SECRET_KEY=your_secret_key
 IYUU_TOKEN=your_iyuu_token
 ```
 3. 安装 python-dotenv：`pip install python-dotenv`
-4. 在脚本开头添加：`from dotenv import load_dotenv; load_dotenv()`
+4. 修改脚本开头，添加：`from dotenv import load_dotenv; load_dotenv()`
 
-## 配置说明
+**注意：** 方法三需要修改脚本代码，不推荐使用。建议使用方法一或方法二。
 
-脚本中的`Config`类包含了可配置的参数：
+## 环境变量说明
 
-```python
-class Config:
-    # 账号信息
-    USERNAME = 'your_username'  # 修改为你的用户名
-    PASSWORD = 'your_password'  # 修改为你的密码
-    
-    # 网站URL
-    BASE_URL = 'https://club.fnnas.com/'
-    LOGIN_URL = BASE_URL + 'member.php?mod=logging&action=login'
-    SIGN_URL = BASE_URL + 'plugin.php?id=zqlj_sign'
-    
-    # Cookie文件路径
-    COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.json')
-    
-    # 验证码识别API (百度OCR API)
-    CAPTCHA_API_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
-    API_KEY = "your_api_key"  # 替换为你的百度OCR API Key
-    SECRET_KEY = "your_secret_key"  # 替换为你的百度OCR Secret Key
-    
-    # 重试设置
-    MAX_RETRIES = 3  # 最大重试次数
-    RETRY_DELAY = 2  # 重试间隔(秒)
-    
-    # Token缓存文件
-    TOKEN_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'token_cache.json')
+脚本现在仅支持通过环境变量配置，所有配置信息必须通过环境变量设置。
+
+### 必需的环境变量
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `USERNAME` | FN论坛用户名 | `your_username` |
+| `PASSWORD` | FN论坛密码 | `your_password` |
+| `API_KEY` | 百度OCR API Key（用于验证码识别） | `your_api_key` |
+| `SECRET_KEY` | 百度OCR Secret Key（用于验证码识别） | `your_secret_key` |
+
+### 可选的环境变量
+
+| 变量名 | 说明 | 示例 |
+|--------|------|------|
+| `IYUU_TOKEN` | IYUU 通知令牌（用于接收签到通知） | `your_iyuu_token` |
+| `DEBUG` | 调试模式（设置为 `1` 启用） | `1` |
+
+### 环境变量检查
+
+脚本在启动前会自动检查必需的环境变量：
+- 如果必需的环境变量未设置，脚本会输出错误信息并退出
+- 如果可选的环境变量未设置，脚本会给出提示但继续运行
+
+**错误示例：**
+```
+错误：以下必需的环境变量未设置：USERNAME, PASSWORD, API_KEY, SECRET_KEY
+请通过环境变量设置这些值后再运行脚本。
+详细配置方法请参考 README.md 文件。
 ```
 
 ### 百度OCR API配置
 
 1. 访问[百度AI开放平台](https://ai.baidu.com/)注册账号
 2. 创建文字识别应用，获取API Key和Secret Key
-3. 将获取到的API Key和Secret Key填入Config类中的对应位置，或通过环境变量 `API_KEY` 和 `SECRET_KEY` 设置
+3. **必须通过环境变量 `API_KEY` 和 `SECRET_KEY` 设置**（见上方环境变量配置说明）
 
 ### IYUU 通知配置
 
 1. 访问 [IYUU](https://iyuu.cn/) 获取通知令牌
-2. 在 Config 类中设置 `IYUU_TOKEN`，或通过环境变量 `IYUU_TOKEN` 设置
+2. **通过环境变量 `IYUU_TOKEN` 设置**（见上方环境变量配置说明）
 3. 脚本会在以下情况发送通知：
    - 签到成功时
    - 今日已签到（提醒）
@@ -187,15 +210,28 @@ class Config:
 
 脚本会在同目录下创建`logs`文件夹，并生成格式为`sign_YYYYMMDD.log`的日志文件，记录签到过程中的各种信息。
 
-可以通过设置环境变量启用调试模式：
+### 日志优化
+
+- 所有HTML响应内容输出时都会添加清晰的分隔符，便于查看
+- 分隔符格式：`【描述 - 开始】` 和 `【描述 - 结束】`
+- 使用 `=====` 作为分隔线，便于在日志中搜索
+
+### 调试模式
+
+可以通过设置环境变量启用调试模式，获取更详细的日志信息：
 
 ```bash
-# Windows
+# Windows (CMD)
 set DEBUG=1
 python fnclub_signer.py
 
+# Windows (PowerShell)
+$env:DEBUG="1"
+python fnclub_signer.py
+
 # Linux/Mac
-DEBUG=1 python fnclub_signer.py
+export DEBUG=1
+python fnclub_signer.py
 ```
 
 ## 自动化部署
