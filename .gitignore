@@ -1,2 +1,3 @@
 logs/
 fn.py
+__pycache__/

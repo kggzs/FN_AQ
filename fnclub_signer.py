@@ -444,6 +444,15 @@ class FNSignIn:
                 
                 # 检查是否需要验证码
                 seccodeverify = soup.find('input', {'name': 'seccodeverify'})
+                
+                # 如果通过name没找到，尝试通过ID前缀查找
+                if not seccodeverify:
+                    inputs = soup.find_all('input')
+                    for inp in inputs:
+                        if inp.get('id', '').startswith('seccodeverify_'):
+                            seccodeverify = inp
+                            break
+                
                 if seccodeverify:
                     logger.info("检测到需要验证码，尝试自动识别验证码")
                     
@@ -534,6 +543,17 @@ class FNSignIn:
                         
                         # 查找验证码输入框
                         seccodeverify = captcha_page_soup.find('input', {'name': 'seccodeverify'})
+                        
+                        # 如果通过name没找到，尝试通过ID前缀查找
+                        if not seccodeverify:
+                            logger.info("通过name未找到验证码输入框，尝试通过ID前缀查找...")
+                            inputs = captcha_page_soup.find_all('input')
+                            for inp in inputs:
+                                if inp.get('id', '').startswith('seccodeverify_'):
+                                    seccodeverify = inp
+                                    logger.info(f"通过ID前缀找到验证码输入框: {inp.get('id')}")
+                                    break
+                        
                         if seccodeverify:
                             # 获取验证码ID
                             seccode_id = seccodeverify.get('id', '').replace('seccodeverify_', '')
@@ -621,6 +641,13 @@ class FNSignIn:
                             logger.info("=" * 80)
                         else:
                             logger.error(f"在验证码页面未找到验证码输入框，重试({retry+1}/{Config.MAX_RETRIES})")
+                            logger.error("=" * 80)
+                            logger.error("【验证码页面HTML内容 - 开始】")
+                            logger.error("=" * 80)
+                            logger.error(captcha_page_soup.prettify())
+                            logger.error("=" * 80)
+                            logger.error("【验证码页面HTML内容 - 结束】")
+                            logger.error("=" * 80)
                             if retry < Config.MAX_RETRIES - 1:
                                 time.sleep(Config.RETRY_DELAY)
                                 continue
