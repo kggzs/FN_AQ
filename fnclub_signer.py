@@ -9,6 +9,7 @@ import logging
 import requests
 import base64
 import urllib.parse
+import random
 from bs4 import BeautifulSoup
 from datetime import datetime
 
@@ -543,6 +544,8 @@ class FNSignIn:
                         
                         # 查找验证码输入框
                         seccodeverify = captcha_page_soup.find('input', {'name': 'seccodeverify'})
+                        seccode_id = None
+                        captcha_url = None
                         
                         # 如果通过name没找到，尝试通过ID前缀查找
                         if not seccodeverify:
@@ -554,20 +557,59 @@ class FNSignIn:
                                     logger.info(f"通过ID前缀找到验证码输入框: {inp.get('id')}")
                                     break
                         
+                        # 如果还找不到输入框，尝试查找seccode span或script (处理JS渲染的情况)
+                        if not seccodeverify:
+                            logger.info("通过输入框未找到验证码，尝试查找seccode span或script...")
+                            # 尝试查找 <span id="seccode_xxxxx">
+                            span_tags = captcha_page_soup.find_all('span')
+                            for span in span_tags:
+                                span_id = span.get('id', '')
+                                if span_id.startswith('seccode_'):
+                                    seccode_id = span_id.replace('seccode_', '')
+                                    logger.info(f"通过span找到seccode hash: {seccode_id}")
+                                    break
+                            
+                            # 如果span也没找到，尝试查找 script updateseccode('xxxxx', ...)
+                            if not seccode_id:
+                                scripts = captcha_page_soup.find_all('script')
+                                for script in scripts:
+                                    # 兼容不同BeautifulSoup版本的文本获取方式
+                                    script_content = script.text if script.text else script.string
+                                    if script_content and 'updateseccode' in script_content:
+                                        match = re.search(r"updateseccode\('([^']+)'", script_content)
+                                        if match:
+                                            seccode_id = match.group(1)
+                                            logger.info(f"通过script找到seccode hash: {seccode_id}")
+                                            break
+                            
+                            # 如果还未找到，尝试直接在HTML源码中正则匹配
+                            if not seccode_id:
+                                match = re.search(r"updateseccode\('([^']+)'", captcha_page_response.text)
+                                if match:
+                                    seccode_id = match.group(1)
+                                    logger.info(f"通过HTML源码正则匹配找到seccode hash: {seccode_id}")
+                        
+                        # 准备验证码URL
                         if seccodeverify:
-                            # 获取验证码ID
+                            # 情况1：找到了输入框 (静态HTML)
                             seccode_id = seccodeverify.get('id', '').replace('seccodeverify_', '')
                             
                             # 获取验证码图片URL
                             captcha_img = captcha_page_soup.find('img', {'src': re.compile(r'misc\.php\?mod=seccode')})
-                            if not captcha_img:
-                                logger.error(f"在验证码页面未找到验证码图片，重试({retry+1}/{Config.MAX_RETRIES})")
-                                if retry < Config.MAX_RETRIES - 1:
-                                    time.sleep(Config.RETRY_DELAY)
-                                    continue
-                                return False
-                            
-                            captcha_url = Config.BASE_URL + captcha_img['src'] if not captcha_img['src'].startswith('http') else captcha_img['src']
+                            if captcha_img:
+                                captcha_url = Config.BASE_URL + captcha_img['src'] if not captcha_img['src'].startswith('http') else captcha_img['src']
+                            else:
+                                logger.info("未找到验证码图片元素，尝试手动构建URL")
+                                update_val = random.randint(10000, 99999)
+                                captcha_url = f"{Config.BASE_URL}misc.php?mod=seccode&update={update_val}&idhash={seccode_id}"
+                                
+                        elif seccode_id:
+                            # 情况2：没找到输入框，但找到了hash (JS渲染)
+                            logger.info(f"检测到JS渲染的验证码，Hash: {seccode_id}")
+                            update_val = random.randint(10000, 99999)
+                            captcha_url = f"{Config.BASE_URL}misc.php?mod=seccode&update={update_val}&idhash={seccode_id}"
+
+                        if seccode_id and captcha_url:
                             logger.info(f"验证码图片URL: {captcha_url}")
                             
                             # 识别验证码
@@ -640,7 +682,7 @@ class FNSignIn:
                             logger.info("【重新登录响应内容 - 结束】")
                             logger.info("=" * 80)
                         else:
-                            logger.error(f"在验证码页面未找到验证码输入框，重试({retry+1}/{Config.MAX_RETRIES})")
+                            logger.error(f"在验证码页面未找到验证码输入框或Hash，重试({retry+1}/{Config.MAX_RETRIES})")
                             logger.error("=" * 80)
                             logger.error("【验证码页面HTML内容 - 开始】")
                             logger.error("=" * 80)
